@@ -1,8 +1,12 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from typing import List
 
 app = FastAPI()
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 @app.get("/")
 async def get_root():
@@ -27,15 +31,21 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 @app.websocket("/ws/{client_id}")
-async def websocket_endpoint(websocket: WebSocket, client_id: int):
+async def websocket_endpoint(websocket: WebSocket, client_id: str):
     await manager.connect(websocket)
     print(f"Client #{client_id} connected. Total clients: {len(manager.active_connections)}")
     try:
         while True:
             data = await websocket.receive_text()
             print(f"Received from #{client_id}: {data}")
-            await manager.broadcast(f"Client #{client_id} says: {data}")
+            if data.startswith("typing:"):
+                # Typing status, broadcast to other users
+                for connection in manager.active_connections:
+                    if connection != websocket:
+                        await connection.send_text(f"{client_id}:{data}")
+            else:
+                # Regular chat message
+                await manager.broadcast(f"{client_id}:{data}")
     except WebSocketDisconnect:
         manager.disconnect(websocket)
         print(f"Client #{client_id} disconnected.")
-        await manager.broadcast(f"Client #{client_id} left the chat")
