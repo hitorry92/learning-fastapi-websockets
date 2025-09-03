@@ -2,49 +2,98 @@
 <html>
     <head>
         <title>Chat</title>
+        <link rel="stylesheet" href="/static/style.css">
     </head>
     <body>
-        <h1>WebSocket Chat</h1>
-        <h2>Your ID: <span id="ws-id"></span></h2>
-        <form action="" onsubmit="sendMessage(event)">
-            <input type="text" id="messageText" autocomplete="off"/>
-            <button>Send</button>
-        </form>
-        <ul id='messages'>
-        </ul>
+        <div id="chat-container">
+            <header>
+                <h1>구디 Chat</h1>
+            </header>
+            <ul id='messages'>
+            </ul>
+            <div id="typing-indicator" style="padding: 0 20px; height: 20px; color: #888;"></div>
+            <div id="form-container">
+                <form action="" onsubmit="sendMessage(event)" style="display: flex; width: 100%;">
+                    <input type="text" id="messageText" autocomplete="off"/>
+                    <button>Send</button>
+                </form>
+            </div>
+        </div>
+
         <script>
-            var client_id = Date.now()
-            document.querySelector("#ws-id").textContent = client_id;
-            var ws = new WebSocket(`ws://localhost:8000/ws/${client_id}`);
-            
-            ws.onopen = function(event) {
-                console.log("WebSocket connection established");
-            };
+            const nickname = prompt("닉네임을 입력해주세요.");
+            const ws = new WebSocket(`ws://localhost:8000/ws/${nickname}`);
+            const messageInput = document.getElementById("messageText");
+            const typingIndicator = document.getElementById("typing-indicator");
+            let typingTimeout;
+
+            messageInput.addEventListener('input', () => {
+                clearTimeout(typingTimeout);
+                ws.send("typing:start");
+                typingTimeout = setTimeout(() => {
+                    ws.send("typing:stop");
+                }, 2000); // Stop typing after 2 seconds of inactivity
+            });
 
             ws.onmessage = function(event) {
-                console.log("Message received:", event.data);
-                var messages = document.getElementById('messages')
-                var message = document.createElement('li')
-                var content = document.createTextNode(event.data)
-                message.appendChild(content)
-                messages.appendChild(message)
-            };
+                const messages = document.getElementById('messages');
+                const messageItem = document.createElement('li');
+                
+                const parts = event.data.split(':');
+                const senderId = parts[0];
+                const messageContent = parts.slice(1).join(':');
 
-            ws.onerror = function(event) {
-                console.error("WebSocket error observed:", event);
-            };
+                if (senderId == nickname) {
+                    return;
+                }
 
-            ws.onclose = function(event) {
-                console.log("WebSocket connection closed:", event);
+                if (messageContent === "typing:start") {
+                    typingIndicator.textContent = `${senderId} is typing...`;
+                    return;
+                } else if (messageContent === "typing:stop") {
+                    typingIndicator.textContent = "";
+                    return;
+                }
+
+                const contentDiv = document.createElement('div');
+                contentDiv.textContent = messageContent;
+                contentDiv.className = 'content';
+
+                messageItem.appendChild(contentDiv);
+                
+                messageItem.className = 'message other-message';
+                const senderName = document.createElement('div');
+                senderName.textContent = senderId;
+                senderName.className = 'sender-name';
+                messageItem.insertBefore(senderName, contentDiv);
+                
+                messages.appendChild(messageItem);
+                messages.scrollTop = messages.scrollHeight; // Auto-scroll to bottom
             };
 
             function sendMessage(event) {
-                var input = document.getElementById("messageText")
-                var message = input.value
-                console.log("Sending message:", message);
-                ws.send(message)
-                input.value = ''
-                event.preventDefault()
+                const input = document.getElementById("messageText");
+                if (input.value) {
+                    ws.send(input.value);
+                    clearTimeout(typingTimeout);
+                    ws.send("typing:stop");
+                    
+                    // Display sent message immediately
+                    const messages = document.getElementById('messages');
+                    const messageItem = document.createElement('li');
+                    messageItem.className = 'message my-message';
+                    
+                    const contentDiv = document.createElement('div');
+                    contentDiv.textContent = input.value;
+                    contentDiv.className = 'content';
+                    
+                    messageItem.appendChild(contentDiv);
+                    messages.appendChild(messageItem);
+                    messages.scrollTop = messages.scrollHeight; // Auto-scroll to bottom
+
+                    input.value = '';
+                }
+                event.preventDefault();
             }
         </script>
     </body>
